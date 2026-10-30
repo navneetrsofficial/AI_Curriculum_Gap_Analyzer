@@ -2,10 +2,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import settings
 
-# Handle Render's postgres:// prefix for SQLAlchemy 2.0 compatibility
+# Handle Render's postgres:// prefix and driver for SQLAlchemy 2.0 compatibility
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # For SQLite, check_same_thread is required to allow multiple threads in FastAPI
 connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
