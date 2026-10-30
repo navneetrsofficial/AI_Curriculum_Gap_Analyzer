@@ -1,4 +1,5 @@
 import os
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
@@ -8,9 +9,6 @@ from .routers import (
     curricula, roles, skills, mappings, assessments,
     analysis, roadmaps, resources, evaluation
 )
-
-# Initialize database schema
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -40,10 +38,24 @@ app.include_router(evaluation.router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 def on_startup():
+    # Robust database connection & schema initialization with retries for cloud cold-starts
+    max_retries = 5
+    for attempt in range(1, max_retries + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                print(f"[Warning] DB initialization failed after {max_retries} attempts: {e}")
+            else:
+                time.sleep(2)
+
     db = SessionLocal()
     try:
         seed_database(db)
         mappings.ensure_engines_indexed(db)
+    except Exception as e:
+        print(f"[Warning] Seeding or indexing warning: {e}")
     finally:
         db.close()
 
