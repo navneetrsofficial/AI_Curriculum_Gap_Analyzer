@@ -36,6 +36,7 @@ import { AnalysisResult, RoleProfile, CurriculumVersion, Roadmap } from '../type
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [roles, setRoles] = useState<RoleProfile[]>([]);
   const [curricula, setCurricula] = useState<CurriculumVersion[]>([]);
@@ -49,6 +50,7 @@ export const Dashboard: React.FC = () => {
   const loadDashboardData = async (roleId: string) => {
     try {
       setLoading(true);
+      setError(null);
       const [rList, cList] = await Promise.all([
         api.getRoles(),
         api.getCurricula()
@@ -73,18 +75,42 @@ export const Dashboard: React.FC = () => {
         hours_per_week: 10
       });
       setRoadmap(rmData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading dashboard data:', err);
+      setError(err?.message || 'Failed to connect to backend server');
     } finally {
       setLoading(false);
     }
   };
 
+  if (error && !analysis) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center">
+        <div className="p-6 bg-navy-900 border border-amber-500/30 rounded-2xl max-w-md w-full space-y-4 shadow-xl shadow-black/40">
+          <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto animate-pulse" />
+          <h2 className="text-lg font-semibold text-white">Connection Error</h2>
+          <p className="text-xs text-slate-300 leading-relaxed">{error}</p>
+          <div className="text-[11px] text-slate-400 bg-navy-950/80 p-3 rounded-lg border border-slate-800">
+            Render free-tier web services spin down during inactivity and may require 30–50 seconds on cold start.
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => loadDashboardData(selectedRole)}
+            className="w-full justify-center"
+          >
+            Retry Connection
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading || !analysis) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-xs text-slate-400">Loading student analytics and AI models...</p>
+        <p className="text-sm font-medium text-slate-300">Loading student analytics and AI models...</p>
+        <p className="text-xs text-slate-500">If server is waking up from idle, this may take a few moments.</p>
       </div>
     );
   }

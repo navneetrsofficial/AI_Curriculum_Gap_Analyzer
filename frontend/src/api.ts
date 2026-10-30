@@ -13,12 +13,21 @@ import {
 
 const getBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
-  if (!envUrl) return '/api';
-  const clean = envUrl.trim().replace(/\/$/, '');
+  if (!envUrl) {
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return '/api';
+    }
+    return 'https://ai-curriculum-backend-n6k4.onrender.com/api';
+  }
+  let clean = envUrl.trim().replace(/\/$/, '');
+  // If Render passed an internal service name without a domain (e.g. "ai-curriculum-backend-n6k4")
+  if (!clean.includes('.') && !clean.includes('localhost') && !clean.includes('127.0.0.1')) {
+    clean = `${clean}.onrender.com`;
+  }
   const withProtocol = clean.startsWith('http://') || clean.startsWith('https://') 
     ? clean 
     : `https://${clean}`;
-  return `${withProtocol}/api`;
+  return withProtocol.endsWith('/api') ? withProtocol : `${withProtocol}/api`;
 };
 
 const API_BASE = getBaseUrl();
