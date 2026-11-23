@@ -19,6 +19,8 @@ export interface CourseOutcome {
   bloom_level: string;
   suggested_bloom?: string;
   unit_id?: number;
+  unit_name?: string;
+  completed?: string;
   accepted_mappings_count?: number;
 }
 

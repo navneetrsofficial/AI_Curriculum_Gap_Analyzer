@@ -86,6 +86,8 @@ def get_curriculum_detail(id: int, db: Session = Depends(get_db)):
                     "bloom_level": o.bloom_level,
                     "suggested_bloom": o.suggested_bloom,
                     "unit_id": o.unit_id,
+                    "unit_name": o.unit.name if o.unit else None,
+                    "completed": getattr(o, "completed", "Yes") or "Yes",
                     "accepted_mappings_count": accepted_count
                 })
             
@@ -239,12 +241,45 @@ def add_outcome_to_course(payload: Dict[str, Any], db: Session = Depends(get_db)
 
     return {"message": "Course outcome added successfully", "outcome_id": outcome.id, "suggested_bloom": sugg_bloom}
 
+def parse_semester_info(val: str) -> tuple[int, str]:
+    v = (val or "").strip()
+    import re
+    # Match digits
+    m = re.search(r'\d+', v)
+    if m:
+        num = int(m.group())
+        return num, v if v.lower().startswith("semester") else f"Semester {v}"
+    # Match Roman numerals
+    v_upper = v.upper()
+    roman_map = [("VIII", 8), ("VII", 7), ("VI", 6), ("IV", 4), ("V", 5), ("III", 3), ("II", 2), ("I", 1)]
+    for r, num in roman_map:
+        if r in v_upper:
+            return num, v if v else f"Semester {r}"
+    return 1, v or "Semester 1"
+
+@router.post("/load-default-demo")
+def load_default_demo_curriculum(db: Session = Depends(get_db)):
+    """Ensures standard JSPM University demo curriculum is loaded and returned."""
+    from ..seed_data import seed_database
+    from .mappings import ensure_engines_indexed
+    seed_database(db)
+    ensure_engines_indexed(db)
+    curric = db.query(CurriculumVersion).filter(CurriculumVersion.is_demo == True).first()
+    if not curric:
+        curric = db.query(CurriculumVersion).first()
+    return {
+        "message": "Demo data successfully verified and ready.",
+        "curriculum_id": curric.id if curric else 1
+    }
+
 @router.post("/import-csv")
 async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     Parses and validates CSV syllabus data.
     Provides row-level validation, checks required columns, reports duplicates, and saves rows.
     """
+    from .mappings import keyword_engine, semantic_engine, ensure_engines_indexed
+
     content = await file.read()
     try:
         decoded = content.decode("utf-8-sig")
@@ -279,6 +314,7 @@ async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depe
     inst_name = first_row.get(col_map["institution_name"], "").strip()
     prog_name = first_row.get(col_map["programme_name"], "").strip()
     ver_name = first_row.get(col_map["curriculum_version"], "").strip()
+    acad_year = first_row.get(col_map.get("academic_year"), "2024-2025").strip()
 
     if not inst_name or not prog_name or not ver_name:
         raise HTTPException(status_code=400, detail="First row must contain valid institution, programme, and version.")
@@ -300,7 +336,12 @@ async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depe
         CurriculumVersion.version_name == ver_name
     ).first()
     if not curric:
-        curric = CurriculumVersion(programme_id=prog.id, version_name=ver_name, is_demo=False)
+        curric = CurriculumVersion(
+            programme_id=prog.id,
+            version_name=ver_name,
+            academic_year=acad_year,
+            is_demo=False
+        )
         db.add(curric)
         db.commit()
 
@@ -308,21 +349,24 @@ async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depe
     sem_cache = {}
     course_cache = {}
 
+    ensure_engines_indexed(db)
+
     for idx, row in enumerate(rows, start=2):
         c_code = row.get(col_map.get("course_code"), "").strip()
         c_name = row.get(col_map.get("course_name"), "").strip()
         outcome_txt = row.get(col_map.get("course_outcome"), "").strip()
-        sem_num_str = row.get(col_map.get("semester"), "1").strip()
+        sem_raw = row.get(col_map.get("semester"), "1").strip()
         bloom_val = row.get(col_map.get("bloom_level"), "").strip()
+        credits_raw = row.get(col_map.get("credits"), "3").strip()
+        unit_raw = row.get(col_map.get("unit"), row.get(col_map.get("unit_name"), "")).strip()
+        outcome_code_raw = row.get(col_map.get("outcome_id"), row.get(col_map.get("outcome_code"), "CO1")).strip()
+        completed_raw = row.get(col_map.get("completed"), "Yes").strip()
 
         if not c_code or not outcome_txt:
             errors.append(f"Row {idx}: missing course_code or course_outcome.")
             continue
 
-        try:
-            sem_num = int(sem_num_str) if sem_num_str.isdigit() else 1
-        except:
-            sem_num = 1
+        sem_num, sem_name = parse_semester_info(sem_raw)
 
         if sem_num not in sem_cache:
             sem = db.query(Semester).filter(
@@ -333,13 +377,18 @@ async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depe
                 sem = Semester(
                     curriculum_version_id=curric.id,
                     semester_number=sem_num,
-                    name=f"Semester {sem_num}"
+                    name=sem_name
                 )
                 db.add(sem)
                 db.commit()
             sem_cache[sem_num] = sem.id
 
         sem_id = sem_cache[sem_num]
+
+        try:
+            credits_val = float(credits_raw)
+        except:
+            credits_val = 3.0
 
         if (sem_id, c_code) not in course_cache:
             course = db.query(Course).filter(
@@ -351,25 +400,65 @@ async def import_curriculum_csv(file: UploadFile = File(...), db: Session = Depe
                     semester_id=sem_id,
                     course_code=c_code,
                     name=c_name or c_code,
-                    credits=3.0
+                    credits=credits_val
                 )
                 db.add(course)
                 db.commit()
+            else:
+                # Update credits if was default
+                if credits_val != 3.0 and course.credits == 3.0:
+                    course.credits = credits_val
+                    db.commit()
             course_cache[(sem_id, c_code)] = course.id
 
         course_id = course_cache[(sem_id, c_code)]
 
+        # Handle Unit if specified
+        unit_id = None
+        if unit_raw:
+            unit = db.query(Unit).filter(Unit.course_id == course_id, Unit.name == unit_raw).first()
+            if not unit:
+                seq = db.query(Unit).filter(Unit.course_id == course_id).count() + 1
+                unit = Unit(course_id=course_id, name=unit_raw, sequence_number=seq)
+                db.add(unit)
+                db.commit()
+            unit_id = unit.id
+
         sugg_bloom, _ = provisional_bloom_suggestion(outcome_txt)
         outcome = CourseOutcome(
             course_id=course_id,
+            unit_id=unit_id,
+            outcome_code=outcome_code_raw or "CO1",
             outcome_text=outcome_txt,
             bloom_level=bloom_val if bloom_val else sugg_bloom,
-            suggested_bloom=sugg_bloom
+            suggested_bloom=sugg_bloom,
+            completed=completed_raw or "Yes"
         )
         db.add(outcome)
+        db.commit()
         created_records += 1
 
-    db.commit()
+        # Automatically map to top skills for instant alignment & roadmap utility
+        try:
+            q_text = f"{c_name}: {outcome_txt}"
+            sem_matches = semantic_engine.find_matches(q_text, top_k=2)
+            kw_matches = keyword_engine.find_matches(q_text, top_k=2)
+            best_matches = sem_matches or kw_matches
+            for m in best_matches:
+                if m["similarity_score"] >= 0.40:
+                    st = "ACCEPTED" if m["similarity_score"] >= 0.65 else "SUGGESTED"
+                    db.add(CurriculumSkillMapping(
+                        course_outcome_id=outcome.id,
+                        skill_id=m["skill_id"],
+                        method=m.get("method", "SEMANTIC"),
+                        similarity_score=m["similarity_score"],
+                        review_status=st,
+                        evidence_text=f"Imported from {c_code}: {outcome_txt[:80]}...",
+                        model_version="sentence-transformers/all-MiniLM-L6-v2"
+                    ))
+            db.commit()
+        except Exception:
+            pass
 
     return {
         "message": f"Import complete. Successfully added {created_records} curriculum outcomes.",

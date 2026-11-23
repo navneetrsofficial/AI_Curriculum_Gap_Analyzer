@@ -33,8 +33,14 @@ class SemanticEmbeddingEngine:
     def _initialize_backend(self):
         """Attempts to load sentence-transformers; otherwise configures dense latent semantic embeddings."""
         try:
+            import os
+            # Avoid network blocking or hanging if offline/sandbox
+            os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
             from sentence_transformers import SentenceTransformer
-            self.transformer_model = SentenceTransformer(self.model_name)
+            try:
+                self.transformer_model = SentenceTransformer(self.model_name, local_files_only=True)
+            except Exception:
+                self.transformer_model = SentenceTransformer(self.model_name)
             self.is_neural_transformer = True
             self.init_error = None
         except Exception as e:

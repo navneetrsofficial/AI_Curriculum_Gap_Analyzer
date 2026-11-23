@@ -92,6 +92,7 @@ class CourseOutcome(Base):
     outcome_text = Column(Text, nullable=False)
     bloom_level = Column(String(50), default="Understand") # Remember, Understand, Apply, Analyze, Evaluate, Create
     suggested_bloom = Column(String(50), nullable=True)
+    completed = Column(String(20), default="Yes") # Yes, No
     
     course = relationship("Course", back_populates="outcomes")
     unit = relationship("Unit", back_populates="outcomes")

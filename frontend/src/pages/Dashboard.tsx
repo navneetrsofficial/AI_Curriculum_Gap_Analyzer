@@ -51,12 +51,18 @@ export const Dashboard: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const [rList, cList] = await Promise.all([
+      let [rList, cList] = await Promise.all([
         api.getRoles(),
         api.getCurricula()
       ]);
+      if (!cList || cList.length === 0) {
+        try {
+          await api.loadDefaultDemo();
+          cList = await api.getCurricula();
+        } catch {}
+      }
       setRoles(rList);
-      setCurricula(cList);
+      setCurricula(cList || []);
 
       const activeCurricId = cList[0]?.id || 1;
       const analysisData = await api.runAnalysis({

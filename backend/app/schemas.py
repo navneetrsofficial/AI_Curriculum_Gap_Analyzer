@@ -8,6 +8,7 @@ class CourseOutcomeBase(BaseModel):
     outcome_text: str
     bloom_level: str = "Understand"
     unit_id: Optional[int] = None
+    completed: Optional[str] = "Yes"
 
 class CourseOutcomeCreate(CourseOutcomeBase):
     course_id: int

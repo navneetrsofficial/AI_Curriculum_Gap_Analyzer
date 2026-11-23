@@ -50,13 +50,19 @@ export const GapAnalysisPage: React.FC = () => {
 
   const loadPrerequisites = async () => {
     try {
-      const [rList, cList] = await Promise.all([
+      let [rList, cList] = await Promise.all([
         api.getRoles(),
         api.getCurricula()
       ]);
+      if (!cList || cList.length === 0) {
+        try {
+          await api.loadDefaultDemo();
+          cList = await api.getCurricula();
+        } catch {}
+      }
       setRoles(rList);
-      setCurricula(cList);
-      if (cList.length > 0) {
+      setCurricula(cList || []);
+      if (cList && cList.length > 0) {
         setSelectedCurric(cList[0].id);
       }
     } catch (err) {

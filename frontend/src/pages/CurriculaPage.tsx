@@ -51,9 +51,17 @@ export const CurriculaPage: React.FC = () => {
   const loadCurricula = async () => {
     try {
       setLoading(true);
-      const list = await api.getCurricula();
-      setCurricula(list);
-      if (list.length > 0) {
+      let list = await api.getCurricula();
+      if (!list || list.length === 0) {
+        try {
+          await api.loadDefaultDemo();
+          list = await api.getCurricula();
+        } catch (seedErr) {
+          console.warn('Auto-seed default demo note:', seedErr);
+        }
+      }
+      setCurricula(list || []);
+      if (list && list.length > 0) {
         const id = selectedCurricId || list[0].id;
         setSelectedCurricId(id);
         await loadDetail(id);
@@ -182,6 +190,26 @@ export const CurriculaPage: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
+            onClick={async () => {
+              try {
+                setLoading(true);
+                await api.loadDefaultDemo();
+                await loadCurricula();
+                alert('Default JSPM University demo curriculum loaded successfully!');
+              } catch (err: any) {
+                alert(`Error loading demo: ${err.message}`);
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Load Demo Data</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
             onClick={() => setShowImportModal(true)}
           >
             <Upload className="w-3.5 h-3.5 text-cyan-400" />
@@ -285,14 +313,27 @@ export const CurriculaPage: React.FC = () => {
                                   <span className="font-mono font-semibold text-slate-300">{outcome.outcome_code}:</span>
                                   <span className="text-slate-200">{outcome.outcome_text}</span>
                                 </div>
-                                <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                                  <span>Bloom's Taxonomy: <strong className="text-cyan-400">{outcome.bloom_level}</strong></span>
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 mt-1">
+                                  {outcome.unit_name && (
+                                    <span className="px-2 py-0.5 rounded bg-slate-800 text-cyan-300 font-medium">
+                                      Unit: {outcome.unit_name}
+                                    </span>
+                                  )}
+                                  <span>Bloom: <strong className="text-cyan-400">{outcome.bloom_level}</strong></span>
                                   {outcome.suggested_bloom && (
-                                    <span className="text-slate-400">(Heuristic: {outcome.suggested_bloom})</span>
+                                    <span className="text-slate-500">({outcome.suggested_bloom})</span>
+                                  )}
+                                  {outcome.completed && (
+                                    <Badge
+                                      variant={outcome.completed === 'Yes' ? 'success' : 'slate'}
+                                      className={outcome.completed === 'Yes' ? 'py-0 text-[10px]' : 'py-0 text-[10px] text-amber-400 border-amber-500/30'}
+                                    >
+                                      {outcome.completed === 'Yes' ? 'Completed' : 'Upcoming'}
+                                    </Badge>
                                   )}
                                   {outcome.accepted_mappings_count !== undefined && outcome.accepted_mappings_count > 0 ? (
-                                    <Badge variant="success" className="py-0 text-[10px]">
-                                      {outcome.accepted_mappings_count} Accepted Skill Mappings
+                                    <Badge variant="brand" className="py-0 text-[10px]">
+                                      {outcome.accepted_mappings_count} Accepted Mappings
                                     </Badge>
                                   ) : (
                                     <Badge variant="warning" className="py-0 text-[10px]">
@@ -408,17 +449,54 @@ export const CurriculaPage: React.FC = () => {
         <form onSubmit={handleImportCsv} className="space-y-4 text-xs">
           <div className="p-3 rounded-lg bg-navy-950 border border-slate-800 flex items-center justify-between">
             <div>
-              <span className="font-semibold text-white block">Download Syllabus Template</span>
-              <span className="text-slate-400">Pre-formatted columns including course outcomes and Bloom levels.</span>
+              <span className="font-semibold text-white block">Download Syllabus Templates</span>
+              <span className="text-slate-400">Pre-formatted columns including course outcomes, units, and Bloom levels.</span>
             </div>
-            <a
-              href={api.getTemplateDownloadUrl()}
-              download
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+            <div className="flex items-center gap-2">
+              <a
+                href={api.getDemoCsvUrl()}
+                download="jspm_demo_syllabus.csv"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-brand-500/40 bg-brand-600/20 hover:bg-brand-600/30 text-brand-300 text-xs font-medium"
+              >
+                <Download className="w-3.5 h-3.5 text-brand-400" />
+                <span>Demo CSV</span>
+              </a>
+              <a
+                href={api.getTemplateDownloadUrl()}
+                download
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Blank Template</span>
+              </a>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-between">
+            <div>
+              <span className="font-semibold text-brand-300 block">Quick Restore Demo Dataset</span>
+              <span className="text-slate-400">Instantly populate JSPM University Pune 14-outcome syllabus.</span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  setSubmitting(true);
+                  await api.loadDefaultDemo();
+                  setShowImportModal(false);
+                  await loadCurricula();
+                } catch (err: any) {
+                  alert(err.message);
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
             >
-              <Download className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Template CSV</span>
-            </a>
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Use Demo Data</span>
+            </Button>
           </div>
 
           <div>

@@ -78,8 +78,24 @@ export const api = {
     return res.json();
   },
 
+  async loadDefaultDemo(): Promise<{ message: string; curriculum_id: number }> {
+    const res = await fetch(`${API_BASE}/curricula/load-default-demo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Failed to load demo data');
+    }
+    return res.json();
+  },
+
   getTemplateDownloadUrl(): string {
     return `${API_BASE}/curricula/template`;
+  },
+
+  getDemoCsvUrl(): string {
+    return '/demo_curriculum.csv';
   },
 
   // Roles
